@@ -5,38 +5,38 @@ from datetime import datetime
 from groq import Groq
 from pypdf import PdfReader, PdfWriter
 
-# --- Configuration & Theme ---
-st.set_page_config(page_title="Enterprise Requisition System", layout="wide")
+# Wide mode for optimal foldable/mobile usage
+st.set_page_config(page_title="Enterprise Requisition", layout="wide")
 st.title("🏢 Enterprise Requisition System")
 
-# --- Authentication & Assets ---
-with st.container():
-    col_a, col_b = st.columns(2)
-    api_key = col_a.text_input("Groq API Key:", type="password")
-    uploaded_template = col_b.file_uploader("Upload Requisition Template (.pdf)", type="pdf")
+# Sidebar for configuration
+with st.sidebar:
+    st.header("Configuration")
+    api_key = st.text_input("Groq API Key:", type="password")
+    uploaded_template = st.file_uploader("Upload PDF Template", type="pdf")
+    if st.button("Reset Session", width='stretch'):
+        st.session_state.df = pd.DataFrame(columns=["Company", "Payee", "Amount", "Invoice_No", "Release_date"])
+        st.rerun()
 
-# --- Persistent State ---
+# State Management
 if "df" not in st.session_state:
     st.session_state.df = pd.DataFrame(columns=["Company", "Payee", "Amount", "Invoice_No", "Release_date"])
 
-# --- Processing Logic ---
-st.subheader("Bulk Input")
-raw_text = st.text_area("Paste invoice data (CSV/Text format):", height=120, help="Paste lines containing Company, Payee, Amount, Invoice#, Date.")
+# Bulk Input
+raw_text = st.text_area("Paste invoice data:", height=120, help="Format: Company - Payee - Amount - Invoice - Date")
 
-if st.button("⚡ Process & Validate Batch", use_container_width=True):
+if st.button("⚡ Process & Validate Batch", width='stretch'):
     if not api_key: st.error("API Key required."); st.stop()
     client = Groq(api_key=api_key)
     
-    with st.spinner("Executing extraction..."):
+    with st.spinner("Analyzing data..."):
         try:
             res = client.chat.completions.create(
-                messages=[{"role": "system", "content": "Extract to JSON. Keys: Company, Payee, Amount, Invoice_No, Release_date. Clean data to standard corporate format."}, 
+                messages=[{"role": "system", "content": "Extract to JSON. Keys: Company, Payee, Amount, Invoice_No, Release_date. Return ONLY valid JSON."}, 
                           {"role": "user", "content": raw_text}],
                 model="llama-3.3-70b-versatile", response_format={"type": "json_object"}
             )
             data = json.loads(res.choices[0].message.content)
-            
-            # Data Normalization
             new_data = []
             for item in data.get("items", []):
                 new_data.append({
@@ -49,34 +49,34 @@ if st.button("⚡ Process & Validate Batch", use_container_width=True):
             st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame(new_data)], ignore_index=True)
             st.rerun()
         except Exception as e:
-            st.error(f"Extraction Error: {e}")
+            st.error(f"Processing Error: {e}")
 
-# --- Editable Data Grid ---
-st.subheader("Review & Finalize Data")
-st.session_state.df = st.data_editor(st.session_state.df, use_container_width=True, num_rows="dynamic")
+# Verification Grid
+st.subheader("Data Review Queue")
+st.session_state.df = st.data_editor(st.session_state.df, width='stretch', num_rows="dynamic")
 
-# --- Production Actions ---
+# Export & Generation
 if not st.session_state.df.empty:
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     
-    # Export Log
     excel_io = io.BytesIO()
     with pd.ExcelWriter(excel_io) as writer: st.session_state.df.to_excel(writer, index=False)
-    col1.download_button("📊 Export Audit Log", excel_io.getvalue(), f"Audit_{datetime.now().strftime('%Y%m%d')}.xlsx", use_container_width=True)
+    col1.download_button("📊 Export Audit Log", excel_io.getvalue(), "log.xlsx", width='stretch')
     
-    # Generate PDFs
-    if col2.button("🚀 Generate PDF Pack", use_container_width=True):
-        if not uploaded_template: st.error("Template missing."); st.stop()
+    if col2.button("🚀 Generate PDF Batch", width='stretch'):
+        if not uploaded_template: st.error("Missing template."); st.stop()
+        
         zip_io = io.BytesIO()
         with zipfile.ZipFile(zip_io, 'w') as zf:
             for _, row in st.session_state.df.iterrows():
                 writer = PdfWriter(); writer.append(PdfReader(uploaded_template))
-                # Mapping Logic
                 mapping = {"VENTURE":"Parenthood Venture SB", "PUTRA":"Parenthood Playground SB (Putra)", "PYRAMID":"Parenthood Playground SB (Pyramid)", "TOP":"Parenthood TOP SB", "MM":"Parenthood MM SB", "MYTOWN":"Parenthood My Town SB", "SP":"Parenthood SP SB", "AMAN":"Parenthood Aman SB", "CT":"Parenthood CT SB", "IMAGO":"Parenthood YB SB (Imago)", "KUCHING":"Parenthood KBM SB (Kuching)", "BINTULU":"Parenthood KBM SB (Bintulu)", "MIRI":"Parenthood KBM SB (Miri)"}
+                
                 form_data = {"txt_date": datetime.now().strftime("%d-%m-%Y"), "txt_payee": row["Payee"], "txt_amount": row["Amount"], "txt_invoice": row["Invoice_No"]}
                 if row["Company"] in mapping: form_data[mapping[row["Company"]]] = "/Yes"
                 form_data[row["Release_date"]] = "/Yes"
+                
                 writer.update_page_form_field_values(writer.pages[0], form_data)
                 pdf_io = io.BytesIO(); writer.write(pdf_io)
                 zf.writestr(f"{row['Company'] or 'GENERAL'}_{row['Invoice_No']}.pdf", pdf_io.getvalue())
-        col3.download_button("💾 Download ZIP", zip_io.getvalue(), "Enterprise_Batch.zip", use_container_width=True)
+        col2.download_button("💾 Download ZIP", zip_io.getvalue(), "requisitions.zip", width='stretch')
