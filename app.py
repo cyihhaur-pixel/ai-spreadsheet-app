@@ -1,138 +1,74 @@
 import streamlit as st
 import pandas as pd
-import json
-import os
+import json, os, io, zipfile
+from datetime import datetime
 from groq import Groq
+from pypdf import PdfReader, PdfWriter
 
-# Page configuration
-st.set_page_config(page_title="AI Spreadsheet Filler", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Bulk Requisition Pro", layout="wide")
+st.title("🚀 Bulk Requisition Pro")
 
-st.title("📊 AI-Powered Spreadsheet Assistant (Groq)")
-st.write("Paste your raw invoice text, receipt data, or email below. The AI will extract the data and fill your spreadsheet columns automatically.")
+api_key = st.sidebar.text_input("Groq API Key:", type="password")
+if "df" not in st.session_state:
+    st.session_state.df = pd.DataFrame(columns=["Company", "Payee", "Amount", "Invoice_No", "Release_date"])
 
-# Sidebar for configuration
-st.sidebar.header("Configuration")
-api_key = st.sidebar.text_input("Enter Groq API Key:", type="password", value=os.environ.get("GROQ_API_KEY", ""))
-model_choice = st.sidebar.selectbox(
-    "Select AI Model:",
-    ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
-)
+# Input
+raw_text = st.text_area("Paste invoice details here:", height=200)
 
-# Initialize Session State for the spreadsheet data if it doesn't exist
-if "spreadsheet_df" not in st.session_state:
-    st.session_state.spreadsheet_df = pd.DataFrame(columns=[
-        "Company", "Payee", "Amount", "Invoice_No", "Release_date"
-    ])
-
-# Main Layout: Split screen for Input and Live Table
-col1, col2 = st.columns([1, 2])
-
-with col1:
-    st.subheader("📥 Input Raw Data")
-    
-    # Custom placeholder text
-    example_text = (
-        "Example:\n"
-        "Please process the invoice for the contractor's 25-day Cat 6 cabling work over in Kuching. "
-        "The payee is TechBuild Services. Total amount is RM 18,500.00, invoice number TB-2026/03-99. "
-        "Please ensure this is processed for the 15th of the month."
+if st.button("⚡ Process & Add to Batch"):
+    if not api_key: st.error("Need API Key"); st.stop()
+    client = Groq(api_key=api_key)
+    system_prompt = (
+        "Extract to JSON: Company, Payee, Amount, Invoice_No, Release_date.\n"
+        "1. Company: Exact keywords only: venture, putra, pyramid, top, mm, mytown, sp, aman, ct, imago, kuching, bintulu, miri.\n"
+        "2. Payee: Return in ALL CAPS.\n"
+        "3. Amount: Format as '5,000.00' (with comma, two decimals).\n"
+        "4. Release_date: Must be: '1st of the month', '7th of the month', '15th of the month', or 'Urgent'."
     )
+    res = client.chat.completions.create(
+        messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": raw_text}],
+        model="llama-3.3-70b-versatile", response_format={"type": "json_object"}
+    )
+    data = json.loads(res.choices[0].message.content)
+    data["Company"] = data["Company"].upper()
+    st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([data])], ignore_index=True)
+    st.rerun()
+
+st.dataframe(st.session_state.df, use_container_width=True)
+
+if not st.session_state.df.empty:
+    col1, col2 = st.columns(2)
+    # Excel Export
+    excel_io = io.BytesIO()
+    with pd.ExcelWriter(excel_io, engine='openpyxl') as writer:
+        st.session_state.df.to_excel(writer, index=False)
+    col1.download_button("📥 Download Master Log", excel_io.getvalue(), "requisitions.xlsx")
     
-    raw_text = st.text_area("Paste text here (e.g., email context, invoice breakdown):", height=300, placeholder=example_text)
-    
-    analyze_btn = st.button("⚡ Analyze & Populate", type="primary")
+    # Bulk PDF Export
+    if col2.button("📦 Generate Bulk PDFs"):
+        if not os.path.exists("template.pdf"): st.error("template.pdf missing!"); st.stop()
+        zip_io = io.BytesIO()
+        with zipfile.ZipFile(zip_io, 'w') as zf:
+            for _, row in st.session_state.df.iterrows():
+                writer = PdfWriter(); writer.append(PdfReader("template.pdf"))
+                form_data = {"txt_date": datetime.now().strftime("%d-%m-%Y"), "txt_payee": row["Payee"], 
+                             "txt_amount": row["Amount"], "txt_invoice": row["Invoice_No"]}
+                
+                # Checkbox Logic
+                comp = row["Company"].lower()
+                mapping = {"venture":"Parenthood Venture SB", "putra":"Parenthood Playground SB (Putra)", "pyramid":"Parenthood Playground SB (Pyramid)", 
+                           "top":"Parenthood TOP SB", "mm":"Parenthood MM SB", "mytown":"Parenthood My Town SB", "sp":"Parenthood SP SB", 
+                           "aman":"Parenthood Aman SB", "ct":"Parenthood CT SB", "imago":"Parenthood YB SB (Imago)", 
+                           "kuching":"Parenthood KBM SB (Kuching)", "bintulu":"Parenthood KBM SB (Bintulu)", "miri":"Parenthood KBM SB (Miri)"}
+                if comp in mapping: form_data[mapping[comp]] = "/Yes"
+                form_data[row["Release_date"]] = "/Yes"
+                
+                writer.update_page_form_field_values(writer.pages[0], form_data)
+                writer.set_need_appearances_writer()
+                pdf_io = io.BytesIO(); writer.write(pdf_io)
+                zf.writestr(f"req_{row['Invoice_No']}.pdf", pdf_io.getvalue())
+        col2.download_button("💾 Download ZIP", zip_io.getvalue(), "requisitions.zip")
 
-with col2:
-    st.subheader("📋 Your Live Spreadsheet")
-    
-    # Reset table button
-    if st.button("🗑️ Clear Table"):
-        st.session_state.spreadsheet_df = pd.DataFrame(columns=["Company", "Payee", "Amount", "Invoice_No", "Release_date"])
-        st.rerun()
-
-    # Display the current dataframe
-    st.dataframe(st.session_state.spreadsheet_df, use_container_width=True)
-
-    # Download options
-    if not st.session_state.spreadsheet_df.empty:
-        st.write("---")
-        st.subheader("💾 Export Data")
-        
-        # Convert to Excel
-        @st.cache_data
-        def convert_df_to_excel(df):
-            import io
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False, sheet_name='Sheet1')
-            return output.getvalue()
-        
-        excel_data = convert_df_to_excel(st.session_state.spreadsheet_df)
-        
-        st.download_button(
-            label="📥 Download as Excel (.xlsx)",
-            data=excel_data,
-            file_name="requisitions.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-# Processing the AI logic
-if analyze_btn:
-    if not api_key:
-        st.error("Please enter your Groq API key in the sidebar to proceed.")
-    elif not raw_text.strip():
-        st.warning("Please paste some text data to parse.")
-    else:
-        with st.spinner("Groq AI is analyzing and structuring the data..."):
-            try:
-                # Initialize Groq Client
-                client = Groq(api_key=api_key)
-                
-                # System prompt forcing structured JSON output mapped to PDF checkboxes
-                system_prompt = (
-                    "You are an expert data parsing assistant. Your task is to extract information from the user's text "
-                    "and format it into a strictly structured JSON object matching these specific keys:\n"
-                    "- Company\n"
-                    "- Payee\n"
-                    "- Amount\n"
-                    "- Invoice_No\n"
-                    "- Release_date\n\n"
-                    "Rules for Data Mapping:\n"
-                    "1. For 'Company', you MUST output ONLY one of the following exact keywords by matching context in the text: "
-                    "'venture', 'putra', 'pyramid', 'top', 'mm', 'mytown', 'sp', 'aman', 'ct', 'imago', 'kuching', 'bintulu', or 'miri'. "
-                    "Do not include full company names, only the keyword.\n"
-                    "2. For 'Release_date', you MUST output ONLY one of these exact 4 options based on the text: "
-                    "'1st of the month', '7th of the month', '15th of the month', or 'Urgent'. "
-                    "If the requested date does not perfectly map to one of these 4, or is not found, return null.\n"
-                    "3. If any field is not found in the text, return null for that field.\n"
-                    "4. Return ONLY a single valid JSON object. Do not include markdown code blocks, backticks, or extra conversational text."
-                )
-                
-                # Call Groq API using JSON mode
-                completion = client.chat.completions.create(
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": raw_text}
-                    ],
-                    model=model_choice,
-                    response_format={"type": "json_object"},
-                    temperature=0.1
-                )
-                
-                # Parse the response text
-                extracted_data = json.loads(completion.choices[0].message.content)
-                
-                # Create a temporary DataFrame for the new row
-                new_row = pd.DataFrame([extracted_data])
-                
-                # Reorder columns just to make sure it matches your spreadsheet perfectly
-                new_row = new_row.reindex(columns=["Company", "Payee", "Amount", "Invoice_No", "Release_date"])
-                
-                # Append to existing session data
-                st.session_state.spreadsheet_df = pd.concat([st.session_state.spreadsheet_df, new_row], ignore_index=True)
-                
-                st.success("Data successfully extracted and added to the spreadsheet view!")
-                st.rerun()
-
-            except Exception as e:
-                st.error(f"An error occurred: {str(e)}")
+if st.button("🗑️ Reset All"):
+    st.session_state.df = pd.DataFrame(columns=["Company", "Payee", "Amount", "Invoice_No", "Release_date"])
+    st.rerun()
