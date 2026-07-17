@@ -12,25 +12,27 @@ api_key = st.sidebar.text_input("Groq API Key:", type="password")
 if "df" not in st.session_state:
     st.session_state.df = pd.DataFrame(columns=["Company", "Payee", "Amount", "Invoice_No", "Release_date"])
 
-raw_text = st.text_area("Paste ALL invoice details here (Include location in each line for best results):", height=200)
+raw_text = st.text_area("Paste ALL invoice details here:", height=200)
 
 if st.button("⚡ Process & Add to Batch"):
-    if not api_key: st.error("Need API Key"); st.stop()
+    if not api_key: 
+        st.error("Need API Key")
+        st.stop()
+    
     client = Groq(api_key=api_key)
     
-    # Stricter prompt to prevent grouping and force full name expansion
-   system_prompt = (
+    system_prompt = (
         "Extract payment items into JSON. Return an object with key 'items' (a list). "
         "Each object must be extracted ONLY from its specific line of text. \n"
         "- Company: Look for location keyword only in the specific line. Map to: 'venture', 'putra', 'pyramid', 'top', 'mm', 'mytown', 'sp', 'aman', 'ct', 'imago', 'kuching', 'bintulu', or 'miri'. "
         "If no location is explicitly in the line, leave as an empty string ''.\n"
         "- Payee: Extract the name AS WRITTEN, converted to ALL CAPS. "
         "ONLY expand these specific abbreviations: 'ent' -> 'ENTERPRISE', 's/b' -> 'SDN BHD'. "
-        "DO NOT change, add, or guess the entity type (e.g., if the invoice says 'Friendly Lighting', keep it as 'FRIENDLY LIGHTING').\n"
+        "DO NOT change, add, or guess the entity type. If the invoice says 'Friendly Lighting', keep it as 'FRIENDLY LIGHTING'.\n"
         "- Amount: Format as 'RM 5,000.00'.\n"
         "- Invoice_No: Extract clearly.\n"
         "- Release_date: Must be: '1st of the month', '7th of the month', '15th of the month', or 'Urgent'."
-    ) 
+    )
     
     res = client.chat.completions.create(
         messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": raw_text}],
@@ -41,7 +43,7 @@ if st.button("⚡ Process & Add to Batch"):
     
     for item in response_data.get("items", []):
         new_row = pd.DataFrame([{
-            "Company": str(item.get("Company", "N/A")).upper(),
+            "Company": str(item.get("Company", "")).upper(),
             "Payee": str(item.get("Payee", "N/A")).upper(),
             "Amount": str(item.get("Amount", "RM 0.00")),
             "Invoice_No": str(item.get("Invoice_No", "N/A")),
@@ -60,11 +62,14 @@ if not st.session_state.df.empty:
     col1.download_button("📥 Download Master Log", excel_io.getvalue(), "requisitions.xlsx")
     
     if col2.button("📦 Generate Bulk PDFs"):
-        if not os.path.exists("template.pdf"): st.error("template.pdf missing!"); st.stop()
+        if not os.path.exists("template.pdf"): 
+            st.error("template.pdf missing!")
+            st.stop()
         zip_io = io.BytesIO()
         with zipfile.ZipFile(zip_io, 'w') as zf:
             for _, row in st.session_state.df.iterrows():
-                writer = PdfWriter(); writer.append(PdfReader("template.pdf"))
+                writer = PdfWriter()
+                writer.append(PdfReader("template.pdf"))
                 form_data = {"txt_date": datetime.now().strftime("%d-%m-%Y"), "txt_payee": row["Payee"], 
                              "txt_amount": row["Amount"], "txt_invoice": row["Invoice_No"]}
                 
@@ -79,7 +84,8 @@ if not st.session_state.df.empty:
                 
                 writer.update_page_form_field_values(writer.pages[0], form_data)
                 writer.set_need_appearances_writer()
-                pdf_io = io.BytesIO(); writer.write(pdf_io)
+                pdf_io = io.BytesIO()
+                writer.write(pdf_io)
                 zf.writestr(f"req_{row['Invoice_No']}.pdf", pdf_io.getvalue())
         col2.download_button("💾 Download All PDFs (ZIP)", zip_io.getvalue(), "requisitions.zip")
 
