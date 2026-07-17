@@ -19,12 +19,15 @@ if st.button("⚡ Process & Add to Batch"):
     client = Groq(api_key=api_key)
     
     # Stricter prompt to prevent grouping and force full name expansion
-    system_prompt = (
+   system_prompt = (
         "Extract payment items into JSON. Return an object with key 'items' (a list). "
-        "Each object must be extracted ONLY from its specific line of text.\n"
-        "- Company: Map to internal keyword: venture, putra, pyramid, top, mm, mytown, sp, aman, ct, imago, kuching, bintulu, miri.\n"
-        "- Payee: Extract full name. MUST expand abbreviations: 'ent' -> 'ENTERPRISE', 's/b' -> 'SDN BHD', 'co' -> 'COMPANY'. Return in ALL CAPS.\n"
-        "- Amount: Format as 'RM 5,000.00' (with 'RM' prefix, comma, and two decimals).\n"
+        "Each object must be extracted ONLY from its specific line of text. \n"
+        "- Company: Look for location keyword only in the specific line. Map to: 'venture', 'putra', 'pyramid', 'top', 'mm', 'mytown', 'sp', 'aman', 'ct', 'imago', 'kuching', 'bintulu', or 'miri'. "
+        "If no location is explicitly in the line, leave as an empty string ''.\n"
+        "- Payee: Extract the name AS WRITTEN, converted to ALL CAPS. "
+        "ONLY expand these specific abbreviations: 'ent' -> 'ENTERPRISE', 's/b' -> 'SDN BHD'. "
+        "DO NOT change, add, or guess the entity type (e.g., if the invoice says 'Friendly Lighting', keep it as 'FRIENDLY LIGHTING').\n"
+        "- Amount: Format as 'RM 5,000.00'.\n"
         "- Invoice_No: Extract clearly.\n"
         "- Release_date: Must be: '1st of the month', '7th of the month', '15th of the month', or 'Urgent'."
     )
