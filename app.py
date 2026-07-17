@@ -80,6 +80,7 @@ if analyze_btn:
                 client = Groq(api_key=api_key)
                 
                 # System prompt forcing structured JSON output mapping your image columns
+                # System prompt forcing structured JSON output mapped to PDF checkboxes
                 system_prompt = (
                     "You are an expert data parsing assistant. Your task is to extract information from the user's text "
                     "and format it into a strictly structured JSON object matching these specific keys:\n"
@@ -88,9 +89,13 @@ if analyze_btn:
                     "- Amount\n"
                     "- Invoice_No\n"
                     "- Release_date\n\n"
-                    "Rules:\n"
-                    "1. If a field is not found in the text, return null for that field.\n"
-                    "2. Return ONLY a single valid JSON object. Do not include markdown code blocks, backticks, or extra conversational text."
+                    "Rules for Data Mapping:\n"
+                    "1. For 'Company', you MUST output ONLY one of the following exact keywords by matching context in the text: "
+                    "'venture', 'putra', 'pyramid', 'top', 'mm', 'mytown', 'sp', 'aman', 'ct', 'imago', 'kuching', 'bintulu', or 'miri'. "
+                    "Do not include full company names, only the keyword.\n"
+                    "2. For 'Release_date', output the exact string representation of the date checkbox expected (e.g., '10th', '25th', or however the target form designates the checkbox). If no date is found, leave it blank.\n"
+                    "3. If a field is not found in the text, return null for that field.\n"
+                    "4. Return ONLY a single valid JSON object. Do not include markdown code blocks, backticks, or extra conversational text."
                 )
                 
                 # Call Groq API using JSON mode
