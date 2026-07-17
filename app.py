@@ -12,16 +12,17 @@ api_key = st.sidebar.text_input("Groq API Key:", type="password")
 if "df" not in st.session_state:
     st.session_state.df = pd.DataFrame(columns=["Company", "Payee", "Amount", "Invoice_No", "Release_date"])
 
-raw_text = st.text_area("Paste ALL invoice details here:", height=200)
+raw_text = st.text_area("Paste ALL invoice details here (Include location in each line for best results):", height=200)
 
 if st.button("⚡ Process & Add to Batch"):
     if not api_key: st.error("Need API Key"); st.stop()
     client = Groq(api_key=api_key)
     
+    # Stricter prompt to prevent grouping and force full name expansion
     system_prompt = (
         "Extract payment items into JSON. Return an object with key 'items' (a list). "
-        "Each object: \n"
-        "- Company: Map to internal keyword: venture, putra, pyramid, top, mm, mytown, sp, aman, ct, imago, kuching, bintulu, or miri.\n"
+        "Each object must be extracted ONLY from its specific line of text.\n"
+        "- Company: Map to internal keyword: venture, putra, pyramid, top, mm, mytown, sp, aman, ct, imago, kuching, bintulu, miri.\n"
         "- Payee: Extract full name. MUST expand abbreviations: 'ent' -> 'ENTERPRISE', 's/b' -> 'SDN BHD', 'co' -> 'COMPANY'. Return in ALL CAPS.\n"
         "- Amount: Format as 'RM 5,000.00' (with 'RM' prefix, comma, and two decimals).\n"
         "- Invoice_No: Extract clearly.\n"
