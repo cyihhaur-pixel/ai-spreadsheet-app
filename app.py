@@ -30,7 +30,7 @@ if st.button("⚡ Process & Add to Batch"):
         "- Amount: Format as 'RM 5,000.00'.\n"
         "- Invoice_No: Extract clearly.\n"
         "- Release_date: Must be: '1st of the month', '7th of the month', '15th of the month', or 'Urgent'."
-    )
+    ) 
     
     res = client.chat.completions.create(
         messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": raw_text}],
