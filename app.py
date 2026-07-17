@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import json, os, io, zipfile
+import json, io, zipfile
 from datetime import datetime
 from groq import Groq
 from pypdf import PdfReader, PdfWriter
@@ -8,27 +8,25 @@ from pypdf import PdfReader, PdfWriter
 st.set_page_config(page_title="Bulk Requisition Pro", layout="wide")
 st.title("🚀 Bulk Requisition Pro")
 
+# --- Sidebar ---
 api_key = st.sidebar.text_input("Groq API Key:", type="password")
+uploaded_template = st.sidebar.file_uploader("Upload your template.pdf", type="pdf")
+
+# --- State ---
 if "df" not in st.session_state:
     st.session_state.df = pd.DataFrame(columns=["Company", "Payee", "Amount", "Invoice_No", "Release_date"])
 
 raw_text = st.text_area("Paste ALL invoice details here:", height=200)
 
 if st.button("⚡ Process & Add to Batch"):
-    if not api_key: 
-        st.error("Need API Key")
-        st.stop()
-    
+    if not api_key: st.error("Need API Key"); st.stop()
     client = Groq(api_key=api_key)
     
     system_prompt = (
         "Extract payment items into JSON. Return an object with key 'items' (a list). "
-        "Each object must be extracted ONLY from its specific line of text. \n"
-        "- Company: Look for location keyword only in the specific line. Map to: 'venture', 'putra', 'pyramid', 'top', 'mm', 'mytown', 'sp', 'aman', 'ct', 'imago', 'kuching', 'bintulu', or 'miri'. "
-        "If no location is explicitly in the line, leave as an empty string ''.\n"
-        "- Payee: Extract the name AS WRITTEN, converted to ALL CAPS. "
-        "ONLY expand these specific abbreviations: 'ent' -> 'ENTERPRISE', 's/b' -> 'SDN BHD'. "
-        "DO NOT change, add, or guess the entity type. If the invoice says 'Friendly Lighting', keep it as 'FRIENDLY LIGHTING'.\n"
+        "Each object must be extracted ONLY from its specific line of text.\n"
+        "- Company: Look for location keyword only in the specific line. Map to: 'venture', 'putra', 'pyramid', 'top', 'mm', 'mytown', 'sp', 'aman', 'ct', 'imago', 'kuching', 'bintulu', or 'miri'.\n"
+        "- Payee: Extract name AS WRITTEN, ALL CAPS. Only expand: 'ent' -> 'ENTERPRISE', 's/b' -> 'SDN BHD'.\n"
         "- Amount: Format as 'RM 5,000.00'.\n"
         "- Invoice_No: Extract clearly.\n"
         "- Release_date: Must be: '1st of the month', '7th of the month', '15th of the month', or 'Urgent'."
@@ -40,7 +38,6 @@ if st.button("⚡ Process & Add to Batch"):
     )
     
     response_data = json.loads(res.choices[0].message.content)
-    
     for item in response_data.get("items", []):
         new_row = pd.DataFrame([{
             "Company": str(item.get("Company", "")).upper(),
@@ -57,19 +54,17 @@ st.dataframe(st.session_state.df, use_container_width=True)
 if not st.session_state.df.empty:
     col1, col2 = st.columns(2)
     excel_io = io.BytesIO()
-    with pd.ExcelWriter(excel_io, engine='openpyxl') as writer:
-        st.session_state.df.to_excel(writer, index=False)
+    with pd.ExcelWriter(excel_io, engine='openpyxl') as writer: st.session_state.df.to_excel(writer, index=False)
     col1.download_button("📥 Download Master Log", excel_io.getvalue(), "requisitions.xlsx")
     
     if col2.button("📦 Generate Bulk PDFs"):
-        if not os.path.exists("template.pdf"): 
-            st.error("template.pdf missing!")
-            st.stop()
+        if not uploaded_template: st.error("Please upload a template.pdf in the sidebar!"); st.stop()
+        
         zip_io = io.BytesIO()
         with zipfile.ZipFile(zip_io, 'w') as zf:
             for _, row in st.session_state.df.iterrows():
                 writer = PdfWriter()
-                writer.append(PdfReader("template.pdf"))
+                writer.append(PdfReader(uploaded_template))
                 form_data = {"txt_date": datetime.now().strftime("%d-%m-%Y"), "txt_payee": row["Payee"], 
                              "txt_amount": row["Amount"], "txt_invoice": row["Invoice_No"]}
                 
@@ -88,7 +83,3 @@ if not st.session_state.df.empty:
                 writer.write(pdf_io)
                 zf.writestr(f"req_{row['Invoice_No']}.pdf", pdf_io.getvalue())
         col2.download_button("💾 Download All PDFs (ZIP)", zip_io.getvalue(), "requisitions.zip")
-
-if st.button("🗑️ Reset All"):
-    st.session_state.df = pd.DataFrame(columns=["Company", "Payee", "Amount", "Invoice_No", "Release_date"])
-    st.rerun()
