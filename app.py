@@ -29,7 +29,16 @@ col1, col2 = st.columns([1, 2])
 
 with col1:
     st.subheader("📥 Input Raw Data")
-    raw_text = st.text_area("Paste text here (e.g., email context, invoice breakdown):", height=300, placeholder="Example:\nWe received invoice #INV-9922 from Acme Corp for a payment of $1,250.50 to John Doe. Please release funds by October 24th, 2026.")
+    
+    # Custom placeholder text
+    example_text = (
+        "Example:\n"
+        "Please process the invoice for the contractor's 25-day Cat 6 cabling work over in Kuching. "
+        "The payee is TechBuild Services. Total amount is RM 18,500.00, invoice number TB-2026/03-99. "
+        "Please ensure this is processed for the 15th of the month."
+    )
+    
+    raw_text = st.text_area("Paste text here (e.g., email context, invoice breakdown):", height=300, placeholder=example_text)
     
     analyze_btn = st.button("⚡ Analyze & Populate", type="primary")
 
@@ -79,7 +88,6 @@ if analyze_btn:
                 # Initialize Groq Client
                 client = Groq(api_key=api_key)
                 
-                # System prompt forcing structured JSON output mapping your image columns
                 # System prompt forcing structured JSON output mapped to PDF checkboxes
                 system_prompt = (
                     "You are an expert data parsing assistant. Your task is to extract information from the user's text "
@@ -93,8 +101,10 @@ if analyze_btn:
                     "1. For 'Company', you MUST output ONLY one of the following exact keywords by matching context in the text: "
                     "'venture', 'putra', 'pyramid', 'top', 'mm', 'mytown', 'sp', 'aman', 'ct', 'imago', 'kuching', 'bintulu', or 'miri'. "
                     "Do not include full company names, only the keyword.\n"
-                    "2. For 'Release_date', output the exact string representation of the date checkbox expected (e.g., '10th', '25th', or however the target form designates the checkbox). If no date is found, leave it blank.\n"
-                    "3. If a field is not found in the text, return null for that field.\n"
+                    "2. For 'Release_date', you MUST output ONLY one of these exact 4 options based on the text: "
+                    "'1st of the month', '7th of the month', '15th of the month', or 'Urgent'. "
+                    "If the requested date does not perfectly map to one of these 4, or is not found, return null.\n"
+                    "3. If any field is not found in the text, return null for that field.\n"
                     "4. Return ONLY a single valid JSON object. Do not include markdown code blocks, backticks, or extra conversational text."
                 )
                 
