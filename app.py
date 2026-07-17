@@ -63,7 +63,7 @@ with col2:
         st.download_button(
             label="📥 Download as Excel (.xlsx)",
             data=excel_data,
-            file_name="filled_spreadsheet.xlsx",
+            file_name="requisitions.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
